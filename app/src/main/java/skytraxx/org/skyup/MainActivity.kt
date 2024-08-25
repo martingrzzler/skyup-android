@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import skytraxx.org.skyup.ui.theme.SkytraxxFont
 import skytraxx.org.skyup.ui.theme.SkyupTheme
@@ -47,12 +49,17 @@ class MainActivity : ComponentActivity() {
             SkyupTheme {
                 val errorMessage = viewModel.error.observeAsState()
                 val progress = viewModel.progress.observeAsState()
+                val loading = viewModel.loading.observeAsState()
+                val done =
+                    progress.value!!.essentialsDownload == 1f && progress.value!!.essentialsInstall == 1f
+                            && progress.value!!.systemDownload == 1f && progress.value!!.systemInstall == 1f
+
                 if (errorMessage.value != null) {
                     AlertDialog(
                         title = { Text("Oops something went wrong...") },
                         text = { Text(errorMessage.value!!) },
                         onDismissRequest = {
-                            viewModel.clearError()
+                            viewModel.clearState()
                         },
                         confirmButton = {
 
@@ -70,66 +77,129 @@ class MainActivity : ComponentActivity() {
                         fontSize = 24.sp,
                         modifier = Modifier.padding(bottom = 30.dp)
                     )
-                    ProgressBar(progress = progress.value?: 0f, label = "someFile.txt", modifier = null)
+                    if (progress.value!!.essentialsDownload != 0f) {
+                        ProgressBar(
+                            progress = progress.value!!.essentialsDownload,
+                            label = "Downloading Essentials...",
+                            modifier = Modifier.padding(bottom = 25.dp)
+                        )
+                    }
+                    if (progress.value!!.essentialsInstall != 0f) {
+                        ProgressBar(
+                            progress = progress.value!!.essentialsInstall,
+                            label = progress.value!!.essentialsCurrentFile,
+                            modifier =Modifier.padding(bottom = 25.dp)
+                        )
+                    }
+                    if (progress.value!!.systemDownload != 0f) {
+                        ProgressBar(
+                            progress = progress.value!!.systemDownload,
+                            label = "Downloading System files...",
+                            modifier = Modifier.padding(bottom = 25.dp)
+                        )
+                    }
+                    if (progress.value!!.systemInstall != 0f) {
+                        ProgressBar(
+                            progress = progress.value!!.systemInstall,
+                            label = progress.value!!.systemCurrentFile,
+                            modifier = null
+                        )
+                    }
                     Spacer(modifier = Modifier.weight(1f))
-                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Button(onClick = {
-                            if (!Environment.isExternalStorageManager()) {
-                                val intent =
-                                    Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                                startActivity(intent)
-                            }
+                    if (!done) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Button(
+                                enabled = !loading.value!!,
+                                onClick = {
+                                    if (!Environment.isExternalStorageManager()) {
+                                        val intent =
+                                            Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                        startActivity(intent)
+                                    }
+                                    viewModel.setLoading(true)
+                                    lifecycleScope.launch {
+                                        try {
+                                            val moundpoint = getSkytraxxMountpoint().getOrThrow()
+                                            val (deviceName, softwareVersion) = getSkytraxxDeviceInfo(
+                                                moundpoint
+                                            ).getOrThrow()
+                                            if (deviceName != "5mini") {
+                                                throw Exception("This device is not a 5mini")
+                                            }
 
-                            try {
-                                if (getSkytraxxDeviceInfo().getOrThrow().name != "5mini") {
-                                    throw Exception("This device is not a 5mini")
-                                }
+                                            val essentials = async {
+                                                val archive =
+                                                    viewModel.downloadArchive(ESSENTIALS_URL)
+                                                        .getOrThrow()
 
-                                lifecycleScope.launch {
-                                    viewModel.downloadArchive("https://www.skytraxx.org/skytraxx5mini/skytraxx5mini-essentials.tar")
-                                }
-                            } catch (e:Exception) {
-                                viewModel.setError(e.message)
+                                                viewModel.extractArchive(
+                                                    archive,
+                                                    moundpoint,
+                                                    softwareVersion,
+                                                    ESSENTIALS_URL
+                                                )
+                                            }
+
+                                            val system = async {
+                                                val archive =
+                                                    viewModel.downloadArchive(SYSTEM_URL)
+                                                        .getOrThrow()
+
+                                                viewModel.extractArchive(
+                                                    archive,
+                                                    moundpoint,
+                                                    softwareVersion,
+                                                    SYSTEM_URL
+                                                )
+                                            }
+
+                                            listOf(essentials, system).awaitAll()
+
+                                        } catch (e: Exception) {
+                                            viewModel.setError(e.message)
+                                        } finally {
+                                            viewModel.setLoading(false)
+                                        }
+                                    }
+                                }) {
+                                Text(text = "Update")
                             }
-                        }) {
-                            Text(text = "Update")
                         }
+                    } else {
+                        Text("Done")
                     }
                 }
             }
         }
     }
 
-    fun getSkytraxxDeviceInfo(): Result<DeviceInfo> {
+    fun getSkytraxxMountpoint(): Result<File> {
         val storageManager = getSystemService(Context.STORAGE_SERVICE) as StorageManager
         val storageVolumes = storageManager.storageVolumes
         val skytraxx = storageVolumes.find {
             it.getDescription(this) == "SKYTRAXX"
         }
 
-        val sysFile = File(skytraxx?.directory, "/.sys/hwsw.info")
-        if (!sysFile.exists()) {
-            return Result.failure(Exception(".sys/hwsw.info not found"))
+        if (skytraxx == null) {
+            return Result.failure(Exception("SKYTRAXX not found"))
         }
 
-        val reader = sysFile.bufferedReader()
-        val dict = parseLines(reader.readText())
-        reader.close()
-
-        val name = dict["hw"]
-        val softwareVersion = dict["sw"]
-
-        if (name == null || softwareVersion == null) {
-            return Result.failure(Exception("hw or sw not found in .sys/hwsw.info"))
+        if (skytraxx.directory == null || skytraxx.directory?.isDirectory == false) {
+            return Result.failure(Exception("SKYTRAXX directory not found"))
         }
 
-        return Result.success(DeviceInfo(name, softwareVersion))
+        return Result.success(skytraxx.directory!!)
     }
+
+
 }
 
 @Composable
 fun ProgressBar(progress: Float, label: String, modifier: Modifier?) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = modifier?.fillMaxWidth() ?: Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -143,26 +213,6 @@ fun ProgressBar(progress: Float, label: String, modifier: Modifier?) {
         LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
     }
 }
-
-fun parseLines(fileContent: String): HashMap<String, String> {
-    val dict = HashMap<String, String>()
-
-    fileContent.lines().forEach { line ->
-        val parts = line.split("=")
-        if (parts.size == 2) {
-            val key = parts[0]
-            val value = parts[1].replace("\"", "")
-            dict[key] = value
-        }
-    }
-
-    return dict
-}
-
-data class DeviceInfo(
-    val name: String,
-    val softwareVersion: String,
-)
 
 
 

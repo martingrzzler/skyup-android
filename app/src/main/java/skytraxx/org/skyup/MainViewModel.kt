@@ -7,57 +7,206 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.kamranzafar.jtar.TarEntry
+import org.kamranzafar.jtar.TarInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+
+const val ESSENTIALS_URL = "https://www.skytraxx.org/skytraxx5mini/skytraxx5mini-essentials.tar"
+const val SYSTEM_URL = "https://www.skytraxx.org/skytraxx5mini/skytraxx5mini-system.tar"
 
 class MainViewModel : ViewModel() {
     private val _error = MutableLiveData<String?>()
     val error: LiveData<String?> get() = _error
 
-    private val _progress = MutableLiveData<Float>(0f)
-    val progress: LiveData<Float> get() = _progress
+    private val _progress = MutableLiveData<Progress>(Progress())
+    val progress: LiveData<Progress> get() = _progress
+
+    private val _loading = MutableLiveData<Boolean>(false)
+    val loading: LiveData<Boolean> get() = _loading
 
     fun setError(errorMessage: String?) {
         _error.value = errorMessage
     }
 
-    fun clearError() {
-        _error.value = null
+    fun setLoading(loading: Boolean) {
+        _loading.value = loading
     }
 
-    suspend fun downloadArchive(url: String): Result<ByteArray> {
-        return withContext(Dispatchers.IO) {
-            val client = OkHttpClient()
-            val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("Unexpected code ${response.code}"))
-            }
-            val body = response.body
-                ?: return@withContext Result.failure(IOException("Failed to download archive: Empty body"))
-            val totalBytes = body.contentLength()
-            val buffer = ByteArrayOutputStream()
-            val byteArray = ByteArray(4096)
+    fun clearState() {
+        _error.value = null
+        _loading.value = false
+        _progress.value  = Progress()
+    }
 
-            var downloadedBytes = 0L
-            var bytesRead: Int
+    suspend fun downloadArchive(url: String): Result<ByteArray> = withContext(Dispatchers.IO) {
+        val client = OkHttpClient()
+        val request = Request.Builder().url(url).build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            return@withContext Result.failure(Exception("Unexpected code ${response.code}"))
+        }
+        val body = response.body
+            ?: return@withContext Result.failure(IOException("Failed to download archive: Empty body"))
+        val totalBytes = body.contentLength()
+        val buffer = ByteArrayOutputStream()
+        val byteArray = ByteArray(4096)
 
-            body.byteStream().use { inputStream ->
-                while (inputStream.read(byteArray).also { bytesRead = it } != -1) {
-                    buffer.write(byteArray, 0, bytesRead)
-                    downloadedBytes += bytesRead
-                    println("Progress ${downloadedBytes.toFloat() / totalBytes.toFloat()}")
-                    withContext(Dispatchers.Main) {
-                        _progress.value = downloadedBytes.toFloat() / totalBytes.toFloat()
+        var downloadedBytes = 0L
+        var bytesRead: Int
+
+        body.byteStream().use { inputStream ->
+            while (inputStream.read(byteArray).also { bytesRead = it } != -1) {
+                buffer.write(byteArray, 0, bytesRead)
+                downloadedBytes += bytesRead
+                println("Progress ${downloadedBytes.toFloat() / totalBytes.toFloat()}")
+                withContext(Dispatchers.Main) {
+                    if (url == ESSENTIALS_URL) {
+                        _progress.value = _progress.value!!.copy(
+                            essentialsDownload = downloadedBytes.toFloat() / totalBytes.toFloat()
+                        )
+                    } else if (url == SYSTEM_URL) {
+                        _progress.value = _progress.value!!.copy(
+                            systemDownload = downloadedBytes.toFloat() / totalBytes.toFloat()
+                        )
                     }
-//                    onUpdate(totalBytes, downloadedBytes)
+                }
+            }
+        }
+
+        return@withContext Result.success(buffer.toByteArray())
+
+    }
+
+    suspend fun extractArchive(
+        archive: ByteArray,
+        moundpoint: File,
+        softwareVersion: String,
+        url: String
+    ) = withContext(Dispatchers.IO) {
+        val tis = TarInputStream(archive.inputStream())
+        var entry: TarEntry?
+        var processedFiles = 0
+
+        // count files in archive
+        val totalFiles = TarInputStream(archive.copyOf().inputStream()).use {
+            var count = 0
+            while (it.nextEntry != null) {
+                count++
+            }
+            count
+        }
+
+        println("Total files: $totalFiles")
+
+
+        while (tis.nextEntry.also { entry = it } != null) {
+            val path = entry!!.name
+            val deviceFile = File(moundpoint, "/$path")
+            processedFiles++
+            println("Progress ${processedFiles.toFloat() / totalFiles.toFloat()}")
+
+            withContext(Dispatchers.Main) {
+                if (url == ESSENTIALS_URL) {
+                    _progress.value = _progress.value!!.copy(
+                        essentialsInstall = processedFiles.toFloat() / totalFiles.toFloat(),
+                        essentialsCurrentFile = path
+                    )
+                } else if (url == SYSTEM_URL) {
+                    _progress.value = _progress.value!!.copy(
+                        systemInstall = processedFiles.toFloat() / totalFiles.toFloat(),
+                        systemCurrentFile = path
+                    )
                 }
             }
 
-            return@withContext Result.success(buffer.toByteArray())
+            if (entry!!.isDirectory) {
+                deviceFile.mkdirs()
+                continue
+            }
+
+            val entryFileBuffer = tis.readBytes()
+            if (entry!!.name.endsWith(".oab") || entry!!.name.endsWith(".owb") ||
+                entry!!.name.endsWith(".otb") || entry!!.name.endsWith(".oob")
+            ) {
+                if (deviceFile.exists() && deviceFile.length() >= 12) {
+                    val deviceBuffer = ByteArray(12)
+                    deviceFile.inputStream().use { it ->
+                        it.read(deviceBuffer, 0, 12)
+                    }
+
+                    if (deviceBuffer.contentEquals(entryFileBuffer.sliceArray(0..11))) {
+                        continue
+                    }
+                }
+                deviceFile.writeBytes(entryFileBuffer)
+            } else if (entry!!.name.endsWith(".xlb")) {
+                File(moundpoint, "/update").mkdirs()
+                val newSoftwareVersion = entryFileBuffer.sliceArray(24..35).toString(Charsets.UTF_8)
+                val newDeviceBuiltNum = newSoftwareVersion.toLong()
+                val deviceBuiltNum = softwareVersion.toLong()
+
+                if (newDeviceBuiltNum > deviceBuiltNum) {
+                    deviceFile.writeBytes(entryFileBuffer)
+                }
+            } else {
+                deviceFile.writeBytes(entryFileBuffer)
+            }
+        }
+    }
+}
+
+suspend fun getSkytraxxDeviceInfo(mountpoint: File): Result<DeviceInfo> {
+    return withContext(Dispatchers.IO) {
+        val sysFile = File(mountpoint, "/.sys/hwsw.info")
+        if (!sysFile.exists()) {
+            return@withContext Result.failure(Exception(".sys/hwsw.info not found"))
+        }
+
+        val reader = sysFile.bufferedReader()
+        val dict = parseLines(reader.readText())
+        reader.close()
+
+        val name = dict["hw"]
+        val softwareVersion = dict["sw"]?.replace("build-", "")
+
+        if (name == null || softwareVersion == null) {
+            return@withContext Result.failure(Exception("hw or sw not found in .sys/hwsw.info"))
+        }
+
+
+        return@withContext Result.success(DeviceInfo(name, softwareVersion))
+    }
+}
+
+
+fun parseLines(fileContent: String): HashMap<String, String> {
+    val dict = HashMap<String, String>()
+
+    fileContent.lines().forEach { line ->
+        val parts = line.split("=")
+        if (parts.size == 2) {
+            val key = parts[0]
+            val value = parts[1].replace("\"", "")
+            dict[key] = value
         }
     }
 
+    return dict
 }
+
+data class DeviceInfo(
+    val name: String,
+    val softwareVersion: String,
+)
+
+data class Progress(
+    val systemDownload: Float = 0f,
+    val systemCurrentFile: String = "",
+    val systemInstall: Float =0f,
+    val essentialsDownload: Float = 0f,
+    val essentialsCurrentFile: String =  "",
+    val essentialsInstall: Float = 0f,
+)
 

@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "skytraxx.org.skyup"
-        minSdk = 30
+        minSdk = 33
         targetSdk = 33
         versionCode = 1
         versionName = "1.0"
@@ -72,4 +72,5 @@ dependencies {
     implementation("androidx.compose.material:material:1.6.8")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.3.9")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.kamranzafar:jtar:2.3")
 }
