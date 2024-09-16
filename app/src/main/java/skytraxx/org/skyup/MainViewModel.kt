@@ -1,8 +1,5 @@
 package skytraxx.org.skyup
 
-import android.content.Context
-import android.net.ConnectivityManager
-import androidx.core.content.ContextCompat.getSystemService
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -157,6 +154,8 @@ class MainViewModel : ViewModel() {
                 deviceFile.mkdirs()
                 continue
             }
+
+            println("Handling file: ${entry!!.name}")
 
             val entryFileBuffer = tis.readBytes()
             if (entry!!.name.endsWith(".oab") || entry!!.name.endsWith(".owb") ||

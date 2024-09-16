@@ -173,6 +173,7 @@ class MainActivity : ComponentActivity() {
                                         return@FilledTonalButton
                                     }
                                     viewModel.updateSkytraxx(moundpoint!!)
+
                                 }) {
                                 Text(text = "Update")
                             }
