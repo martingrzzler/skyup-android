@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.storage.StorageManager
@@ -23,8 +24,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -55,16 +58,31 @@ class MainActivity : ComponentActivity() {
                 val errorMessage = viewModel.error.observeAsState()
                 val progress = viewModel.progress.observeAsState()
                 val loading = viewModel.loading.observeAsState()
-                val showCellularWarning = remember {
-                    mutableStateOf(false)
-                }
-                val shownCellularWarning = remember {
-                    mutableStateOf(false)
-                }
+                val hasAllFileAccess = viewModel.hasAllFileAccess.observeAsState()
                 val done =
                     progress.value!!.essentialsDownload == 1f && progress.value!!.essentialsInstall == 1f
                             && progress.value!!.systemDownload == 1f && progress.value!!.systemInstall == 1f
-
+                if (!hasAllFileAccess.value!!) {
+                    AlertDialog(
+                        icon = { Icon(Icons.Rounded.Info, "Info") },
+                        title = { Text("SKYUP needs to access all files on your device.") },
+                        text = { Text("You must give file permissions in order to proceed.") },
+                        onDismissRequest = {
+                        },
+                        confirmButton = {
+                            Button(onClick = {
+                                val uri = Uri.parse("package:$packageName")
+                                val intent =
+                                    Intent(
+                                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                        uri
+                                    )
+                                startActivity(intent)
+                            }) {
+                                Text("Give permission")
+                            }
+                        })
+                }
                 if (errorMessage.value != null) {
                     AlertDialog(
                         icon = { Icon(Icons.Rounded.Warning, "Warning") },
@@ -75,24 +93,8 @@ class MainActivity : ComponentActivity() {
                         onDismissRequest = {
                             viewModel.clearState()
                         },
-                        confirmButton = {
-
-                        })
+                        confirmButton = {})
                 }
-                if (showCellularWarning.value) {
-                    AlertDialog(
-                        icon = { Icon(Icons.Rounded.Warning, "Warning") },
-                        title = { Text("Warning") },
-                        text = { Text("This will use mobile data and may cost you money.") },
-                        onDismissRequest = {
-                            showCellularWarning.value = false
-                            shownCellularWarning.value = true
-                        },
-                        confirmButton = {
-
-                        })
-                }
-
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -148,32 +150,19 @@ class MainActivity : ComponentActivity() {
                                 ),
                                 enabled = !loading.value!!,
                                 onClick = {
-                                    if (!Environment.isExternalStorageManager()) {
-                                        val intent =
-                                            Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                                        startActivity(intent)
-                                        return@FilledTonalButton
-                                    }
-                                    if (!isInternetConnected()) {
-                                        viewModel.setError("No internet connection")
-                                        return@FilledTonalButton
-                                    }
-                                    if (!shownCellularWarning.value && isCellularInternetConnection()) {
-                                        showCellularWarning.value = true
-                                        return@FilledTonalButton
-                                    }
-
                                     viewModel.setLoading(true)
                                     var moundpoint: File? = null
                                     try {
-                                        moundpoint =
-                                            getSkytraxxMountpoint().getOrThrow()
-                                    } catch (e: Exception) {
+                                        moundpoint = getSkytraxxMountpoint().getOrThrow()
+                                    }
+                                    catch (e: MustReloadException) {
+                                        triggerRestart()
+                                    }
+                                    catch (e: Exception) {
                                         viewModel.setError(e.message)
                                         return@FilledTonalButton
                                     }
                                     viewModel.updateSkytraxx(moundpoint!!)
-
                                 }) {
                                 Text(text = "Update")
                             }
@@ -186,7 +175,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun restartApp() {
+    override fun onResume() {
+        super.onResume()
+        viewModel.setHasAllFileAccess(Environment.isExternalStorageManager())
+
+
+        if (Environment.isExternalStorageManager()) {
+            val mountpoint = getSkytraxxMountpoint()
+            mountpoint.onFailure {
+                if (it is MustReloadException) {
+                    triggerRestart()
+                }
+            }
+        }
+
+
+    }
+
+    private fun triggerRestart() {
         val intent = Intent(this, MainActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
@@ -209,45 +215,18 @@ class MainActivity : ComponentActivity() {
             return Result.failure(Exception("SKYTRAXX not found"))
         }
 
-        if (skytraxx.directory == null ) {
+        if (skytraxx.directory == null) {
             return Result.failure(Exception("SKYTRAXX directory not found"))
         }
-
-        // first time after permissions are granted - hack
         if (skytraxx.directory?.isDirectory == false && Environment.isExternalStorageManager()) {
-            restartApp()
+            return Result.failure(MustReloadException())
         }
 
         return Result.success(skytraxx.directory!!)
     }
-
-    private fun isInternetConnected(): Boolean {
-        val connectivityManager =
-            getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return when {
-            activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> true
-            activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> true
-            activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> true
-            else -> false
-        }
-    }
-
-    private fun isCellularInternetConnection(): Boolean {
-        val connectivityManager =
-            getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return !activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && activeNetwork.hasTransport(
-            NetworkCapabilities.TRANSPORT_CELLULAR
-        )
-    }
-
-
-
-
 }
+
+class MustReloadException : Exception()
 
 @Composable
 fun ProgressBar(progress: Float, label: String, modifier: Modifier?) {

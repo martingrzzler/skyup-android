@@ -1,5 +1,6 @@
 package skytraxx.org.skyup
 
+import android.util.AtomicFile
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -11,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okio.sink
 import org.kamranzafar.jtar.TarEntry
 import org.kamranzafar.jtar.TarInputStream
 import java.io.ByteArrayOutputStream
@@ -24,6 +26,9 @@ class MainViewModel : ViewModel() {
     private val _error = MutableLiveData<String?>()
     val error: LiveData<String?> get() = _error
 
+    private val _hasAllFileAccess = MutableLiveData<Boolean>(false)
+    val hasAllFileAccess: LiveData<Boolean> get() = _hasAllFileAccess
+
     private val _progress = MutableLiveData<Progress>(Progress())
     val progress: LiveData<Progress> get() = _progress
 
@@ -33,6 +38,10 @@ class MainViewModel : ViewModel() {
     private val coroutineExceptionHandler = CoroutineExceptionHandler { _, exception ->
         _error.value = exception.message
         _loading.value = false
+    }
+
+    fun setHasAllFileAccess(hasAllFileAccess: Boolean) {
+        _hasAllFileAccess.value = hasAllFileAccess
     }
 
     fun setError(errorMessage: String?) {
@@ -133,7 +142,7 @@ class MainViewModel : ViewModel() {
 
         while (tis.nextEntry.also { entry = it } != null) {
             val path = entry!!.name
-            val deviceFile = File(moundpoint, "/$path")
+            val deviceFile = AtomicFile(File(moundpoint, "/$path"))
             processedFiles++
 
             withContext(Dispatchers.Main) {
@@ -151,7 +160,7 @@ class MainViewModel : ViewModel() {
             }
 
             if (entry!!.isDirectory) {
-                deviceFile.mkdirs()
+                deviceFile.baseFile.mkdirs()
                 continue
             }
 
@@ -161,9 +170,9 @@ class MainViewModel : ViewModel() {
             if (entry!!.name.endsWith(".oab") || entry!!.name.endsWith(".owb") ||
                 entry!!.name.endsWith(".otb") || entry!!.name.endsWith(".oob")
             ) {
-                if (deviceFile.exists() && deviceFile.length() >= 12) {
+                if (deviceFile.baseFile.exists() && deviceFile.baseFile.length() >= 12) {
                     val deviceBuffer = ByteArray(12)
-                    deviceFile.inputStream().use { it ->
+                    deviceFile.baseFile.inputStream().use { it ->
                         it.read(deviceBuffer, 0, 12)
                     }
 
@@ -171,19 +180,19 @@ class MainViewModel : ViewModel() {
                         continue
                     }
                 }
-                deviceFile.writeBytes(entryFileBuffer)
             } else if (entry!!.name.endsWith(".xlb")) {
                 File(moundpoint, "/update").mkdirs()
                 val newSoftwareVersion = entryFileBuffer.sliceArray(24..35).toString(Charsets.UTF_8)
                 val newDeviceBuiltNum = newSoftwareVersion.toLong()
                 val deviceBuiltNum = softwareVersion.toLong()
 
-                if (newDeviceBuiltNum > deviceBuiltNum) {
-                    deviceFile.writeBytes(entryFileBuffer)
+                if (newDeviceBuiltNum <= deviceBuiltNum) {
+                    continue
                 }
-            } else {
-                deviceFile.writeBytes(entryFileBuffer)
             }
+            val fos = deviceFile.startWrite()
+            fos.write(entryFileBuffer)
+            deviceFile.finishWrite(fos)
         }
     }
 
