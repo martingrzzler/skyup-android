@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="homeNote">Stellen Sie sicher, dass Sie Ihr Skytraxx Mini über den USB-C-Anschluss an Ihrem Telefon anschließen, bevor Sie starten.</string>
+    <string name="filePermissionsTitle">Dateizugriff erlauben</string>
+    <string name="filePermissionsDesc">Sie müssen Dateiberechtigungen erteilen, um fortzufahren.</string>
+    <string name="filePermissionsBtn">Berechtigung erteilen</string>
+    <string name="update">Aktualisieren</string>
+    <string name="genericErrMsg">Etwas ist schiefgelaufen...</string>
+    <string name="skytraxxNotFound">Ihr 5Mini scheint nicht verbunden zu sein</string>
+    <string name="wrongDevice">Das angeschlossene SKYTRAXX ist kein 5Mini</string>
+    <string name="successMsg">Das Update war erfolgreich. Sie können die Anwendung jetzt schließen.</string>
+</resources>

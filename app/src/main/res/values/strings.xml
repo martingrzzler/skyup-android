@@ -1,3 +1,12 @@
 <resources>
-    <string name="app_name">Skyup</string>
+    <string name="app_name" translatable="false">Skyup</string>
+    <string name="homeNote">Make sure to insert your Skytraxx Mini via the USB-C Port on your phone before starting.</string>
+    <string name="filePermissionsTitle">Allow file access</string>
+    <string name="filePermissionsDesc">You must give file permissions in order to proceed.</string>
+    <string name="filePermissionsBtn">Give permission</string>
+    <string name="update">Update</string>
+    <string name="genericErrMsg">Something went wrong...</string>
+    <string name="skytraxxNotFound">Your 5Mini does not seem to be connected</string>
+    <string name="wrongDevice">The connected SKYTRAXX is not a 5Mini</string>
+    <string name="successMsg">The Update was successful. You can close the application now.</string>
 </resources>

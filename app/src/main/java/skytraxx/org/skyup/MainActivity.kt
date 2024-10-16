@@ -2,8 +2,6 @@ package skytraxx.org.skyup
 
 import android.content.Context
 import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -34,8 +32,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.colorResource
@@ -55,7 +51,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             SkyupTheme {
-                val errorMessage = viewModel.error.observeAsState()
+                val error = viewModel.error.observeAsState()
                 val progress = viewModel.progress.observeAsState()
                 val loading = viewModel.loading.observeAsState()
                 val hasAllFileAccess = viewModel.hasAllFileAccess.observeAsState()
@@ -65,8 +61,8 @@ class MainActivity : ComponentActivity() {
                 if (!hasAllFileAccess.value!!) {
                     AlertDialog(
                         icon = { Icon(Icons.Rounded.Info, "Info") },
-                        title = { Text("SKYUP needs to access all files on your device.") },
-                        text = { Text("You must give file permissions in order to proceed.") },
+                        title = { Text(getString(R.string.filePermissionsTitle)) },
+                        text = { Text(getString(R.string.filePermissionsDesc)) },
                         onDismissRequest = {
                         },
                         confirmButton = {
@@ -79,21 +75,45 @@ class MainActivity : ComponentActivity() {
                                     )
                                 startActivity(intent)
                             }) {
-                                Text("Give permission")
+                                Text(getString(R.string.filePermissionsBtn))
                             }
                         })
                 }
-                if (errorMessage.value != null) {
-                    AlertDialog(
-                        icon = { Icon(Icons.Rounded.Warning, "Warning") },
-                        textContentColor = colorResource(R.color.warning),
-                        iconContentColor = colorResource(R.color.warning),
-                        title = { Text("Something went wrong...") },
-                        text = { Text(errorMessage.value!!) },
-                        onDismissRequest = {
-                            viewModel.clearState()
-                        },
-                        confirmButton = {})
+               error.value?.let {
+                    when (it) {
+                        is SKYTRAXXNotFound -> {
+                            AlertDialog(
+                                icon = { Icon(Icons.Rounded.Info, "Info") },
+                                title = { Text(getString(R.string.skytraxxNotFound)) },
+                                text = { Text(getString(R.string.homeNote)) },
+                                onDismissRequest = {
+                                    viewModel.clearState()
+                                },
+                                confirmButton = {})
+                        }
+                        is WrongDevice -> {
+                            AlertDialog(
+                                icon = { Icon(Icons.Rounded.Info, "Info") },
+                                title = { Text(getString(R.string.wrongDevice)) },
+                                onDismissRequest = {
+                                    viewModel.clearState()
+                                },
+                                confirmButton = {})
+                        }
+                        else -> {
+                            AlertDialog(
+                                icon = { Icon(Icons.Rounded.Warning, "Warning") },
+                                textContentColor = colorResource(R.color.warning),
+                                iconContentColor = colorResource(R.color.warning),
+                                title = { Text(getString(R.string.genericErrMsg)) },
+                                text = { Text(it?.message ?: "") },
+                                onDismissRequest = {
+                                    viewModel.clearState()
+                                },
+                                confirmButton = {})
+                        }
+                    }
+
                 }
                 Column(
                     modifier = Modifier
@@ -108,7 +128,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(bottom = 30.dp)
                     )
                     if (loading.value == false && !done) {
-                        Text(text = "Make sure to insert your Skytraxx Mini via the USB-C Port on your phone before starting.")
+                        Text(text = getString(R.string.homeNote))
                     }
                     if (progress.value!!.essentialsDownload != 0f) {
                         ProgressBar(
@@ -154,21 +174,19 @@ class MainActivity : ComponentActivity() {
                                     var moundpoint: File? = null
                                     try {
                                         moundpoint = getSkytraxxMountpoint().getOrThrow()
-                                    }
-                                    catch (e: MustReloadException) {
+                                    } catch (e: MustReloadException) {
                                         triggerRestart()
-                                    }
-                                    catch (e: Exception) {
-                                        viewModel.setError(e.message)
+                                    } catch (e: Exception) {
+                                        viewModel.setError(e)
                                         return@FilledTonalButton
                                     }
                                     viewModel.updateSkytraxx(moundpoint!!)
                                 }) {
-                                Text(text = "Update")
+                                Text(text = "SKYTRAXX " + getString(R.string.update))
                             }
                         }
                     } else {
-                        Text("The Update was successful. You can close the application now.")
+                        Text(getString(R.string.successMsg))
                     }
                 }
             }
@@ -212,7 +230,8 @@ class MainActivity : ComponentActivity() {
         }
 
         if (skytraxx == null) {
-            return Result.failure(Exception("SKYTRAXX not found"))
+            storageManager.
+            return Result.failure(SKYTRAXXNotFound())
         }
 
         if (skytraxx.directory == null) {
@@ -226,7 +245,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-class MustReloadException : Exception()
 
 @Composable
 fun ProgressBar(progress: Float, label: String, modifier: Modifier?) {

@@ -23,8 +23,8 @@ const val ESSENTIALS_URL = "https://www.skytraxx.org/skytraxx5mini/skytraxx5mini
 const val SYSTEM_URL = "https://www.skytraxx.org/skytraxx5mini/skytraxx5mini-system.tar"
 
 class MainViewModel : ViewModel() {
-    private val _error = MutableLiveData<String?>()
-    val error: LiveData<String?> get() = _error
+    private val _error = MutableLiveData<Exception?>()
+    val error: LiveData<Exception?> get() = _error
 
     private val _hasAllFileAccess = MutableLiveData<Boolean>(false)
     val hasAllFileAccess: LiveData<Boolean> get() = _hasAllFileAccess
@@ -36,7 +36,7 @@ class MainViewModel : ViewModel() {
     val loading: LiveData<Boolean> get() = _loading
 
     private val coroutineExceptionHandler = CoroutineExceptionHandler { _, exception ->
-        _error.value = exception.message
+        _error.value = Exception(exception)
         _loading.value = false
     }
 
@@ -44,8 +44,8 @@ class MainViewModel : ViewModel() {
         _hasAllFileAccess.value = hasAllFileAccess
     }
 
-    fun setError(errorMessage: String?) {
-        _error.value = errorMessage
+    fun setError(error: Exception) {
+        _error.value = error
     }
 
     fun setLoading(loading: Boolean) {
@@ -200,7 +200,7 @@ class MainViewModel : ViewModel() {
         withContext(Dispatchers.IO) {
             val sysFile = File(mountpoint, "/.sys/hwsw.info")
             if (!sysFile.exists()) {
-                return@withContext Result.failure(Exception(".sys/hwsw.info not found"))
+                return@withContext Result.failure(WrongDevice())
             }
 
             val reader = sysFile.bufferedReader()
@@ -220,6 +220,10 @@ class MainViewModel : ViewModel() {
 
 
 }
+
+class SKYTRAXXNotFound: Exception("The volume does not seem to be connected")
+class WrongDevice: Exception("The skytraxx volume is not a 5mini")
+class MustReloadException : Exception()
 
 
 fun parseLines(fileContent: String): HashMap<String, String> {
