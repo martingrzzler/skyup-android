@@ -173,7 +173,7 @@ class MainActivity : ComponentActivity() {
                                     viewModel.setLoading(true)
                                     var moundpoint: File? = null
                                     try {
-                                        moundpoint = getSkytraxxMountpoint().getOrThrow()
+                                        moundpoint = getSkytraxxMountPoint().getOrThrow()
                                     } catch (e: MustReloadException) {
                                         triggerRestart()
                                     } catch (e: Exception) {
@@ -187,6 +187,12 @@ class MainActivity : ComponentActivity() {
                         }
                     } else {
                         Text(getString(R.string.successMsg))
+                        Button(onClick = {
+                            finish()
+                            Runtime.getRuntime().exit(0)
+                        }) {
+                           Text(text = getString(R.string.close))
+                        }
                     }
                 }
             }
@@ -197,17 +203,14 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         viewModel.setHasAllFileAccess(Environment.isExternalStorageManager())
 
-
         if (Environment.isExternalStorageManager()) {
-            val mountpoint = getSkytraxxMountpoint()
-            mountpoint.onFailure {
+            val mountPoint = getSkytraxxMountPoint()
+            mountPoint.onFailure {
                 if (it is MustReloadException) {
                     triggerRestart()
                 }
             }
         }
-
-
     }
 
     private fun triggerRestart() {
@@ -218,7 +221,7 @@ class MainActivity : ComponentActivity() {
         Runtime.getRuntime().exit(0)
     }
 
-    private fun getSkytraxxMountpoint(): Result<File> {
+    private fun getSkytraxxMountPoint(): Result<File> {
         val storageManager = getSystemService(Context.STORAGE_SERVICE) as StorageManager
         val storageVolumes = storageManager.storageVolumes
         val skytraxx = storageVolumes.find {
@@ -230,7 +233,6 @@ class MainActivity : ComponentActivity() {
         }
 
         if (skytraxx == null) {
-            storageManager.
             return Result.failure(SKYTRAXXNotFound())
         }
 

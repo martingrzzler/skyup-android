@@ -36,7 +36,7 @@ class MainViewModel : ViewModel() {
     val loading: LiveData<Boolean> get() = _loading
 
     private val coroutineExceptionHandler = CoroutineExceptionHandler { _, exception ->
-        _error.value = Exception(exception)
+        _error.value = exception as Exception
         _loading.value = false
     }
 
@@ -64,7 +64,7 @@ class MainViewModel : ViewModel() {
                 moundpoint
             ).getOrThrow()
             if (deviceName != "5mini") {
-                throw Exception("This device is not a 5mini")
+                throw WrongDevice()
             }
 
             val essentials = async {
@@ -187,6 +187,15 @@ class MainViewModel : ViewModel() {
                 val deviceBuiltNum = softwareVersion.toLong()
 
                 if (newDeviceBuiltNum <= deviceBuiltNum) {
+                    continue
+                }
+            } else if (deviceFile.baseFile.exists() && deviceFile.baseFile.length() > 0) {
+                val deviceBuffer = ByteArray(512)
+                var read = 0
+                deviceFile.baseFile.inputStream().use { it ->
+                    read = it.read(deviceBuffer, 0, 512)
+                }
+                if (deviceBuffer.contentEquals(entryFileBuffer.sliceArray(0..<read))){
                     continue
                 }
             }

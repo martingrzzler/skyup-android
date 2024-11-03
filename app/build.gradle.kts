@@ -9,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "skytraxx.org.skyup"
-        minSdk = 33
-        targetSdk = 33
-        versionCode = 1
-        versionName = "1.0"
+        minSdk = 34
+        targetSdk = 34
+        versionCode = 3
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -27,6 +27,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

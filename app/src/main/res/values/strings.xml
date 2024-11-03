@@ -9,4 +9,5 @@
     <string name="skytraxxNotFound">Your 5Mini does not seem to be connected</string>
     <string name="wrongDevice">The connected SKYTRAXX is not a 5Mini</string>
     <string name="successMsg">The Update was successful. You can close the application now.</string>
+    <string name="close">Close</string>
 </resources>
